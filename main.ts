@@ -4,11 +4,14 @@
 // Model (own design, fitted from the case file only, no network):
 //   r = E / P, earners over players tracked. Recover E = r * P / 100 per read.
 //   Two regimes, chosen by whether the history actually moves:
-//   * RICH history (several distinct reads): anchor on the last read and
-//     extrapolate the CHANGE in logit(r) linearly in log-time, with the slope
-//     shrunk toward the cross-trophy median (small counts are noisy). This
-//     captures progression: early trophies' rates climb as the cohort plays
-//     through, late ones flatten or dilute as P outgrows E.
+//   * RICH history (several distinct reads): blend of two per-trophy models.
+//     B, saturating growth r(t) = R * (1 - exp(-t/T)), fitted by grid search
+//     over T with R by least squares: a trophy's rate approaches its ceiling
+//     instead of growing forever. C, the log-time slope of logit(r) over the
+//     LAST 8 distinct reads only, shrunk toward the cross-trophy median and
+//     anchored on the last read: the recent slope carries the current growth
+//     rate, not the early steep part. The median is the average of the two
+//     models' logits, and the spread adds their disagreement.
 //   * FLAT history (one distinct read, e.g. launch night before the first
 //     refresh): the page is stale, so the answer is most likely a refresh:
 //     P jumps and rates dilute. Shift the median down by a dilution amount
@@ -95,7 +98,8 @@ function forecastCase(c: CaseFile): Array<{ id: number; q: number[] }> {
   const horizonDays = c.horizon_minutes / 1440;
   const startMs = Date.parse(c.history[0].at);
   const targetMs = Date.parse(c.target);
-  const tTarget = Math.max(0, (targetMs - startMs) / 3_600_000);
+  const tTargetRaw = (targetMs - startMs) / 3_600_000;
+  const tTarget = Number.isNaN(tTargetRaw) ? 0 : Math.max(0, tTargetRaw);
 
   // Collapse the history to its distinct reads (consecutive identical rate
   // vectors are one Exophase refresh, not new information).
